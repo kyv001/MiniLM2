@@ -79,8 +79,10 @@ if __name__ == '__main__':
         print(y)
         print(x.shape, y.shape)
         for i in range(2):
-            print(tokenizer.decode(x[i].tolist())[:50])
-            print(tokenizer.decode(y[i].tolist())[:50])
+            for idx in x[i].tolist():
+                print(tokenizer.id_to_token(idx), end="")
+            for idy in y[i].tolist():
+                print(tokenizer.id_to_token(idy), end="")
         try:
             input()
         except EOFError:
