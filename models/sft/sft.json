@@ -20,8 +20,8 @@
     "top_p": 0.1,
     "temperature": 0.8,
 
-    "checkpoint_file": "checkpoint_206.pt",
-    "checkpoint_step": 206,
+    "checkpoint_file": "checkpoint_308.pt",
+    "checkpoint_step": 308,
 
     "log_file": "sft.log"
 }

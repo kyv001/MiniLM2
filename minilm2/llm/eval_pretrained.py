@@ -31,7 +31,7 @@ if __name__ == '__main__':
         max_length=train_config['max_length'],
         n_heads=train_config['num_heads'],
         n_blocks=train_config['num_layers'],
-        dropout=train_config['dropout']
+        dropout=0 # 推理时不使用dropout
     )
     # 统计参数量
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
