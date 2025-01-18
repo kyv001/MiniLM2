@@ -5,8 +5,6 @@
     "model_dim": 1024,
     "num_heads": 16,
     "num_layers": 20,
-    "finetune_layers": 4,
-    "?finetune_layers": "为防止显存爆炸，只微调前8层参数。如果有足够显存则可去掉这一行。",
     "dropout": 0.1,
     "batch_size": 1,
     "val_batch_size": 0,
@@ -20,8 +18,8 @@
     "top_p": 0.1,
     "temperature": 0.8,
 
-    "checkpoint_file": "checkpoint_308.pt",
-    "checkpoint_step": 308,
+    "checkpoint_file": "../pretrain/checkpoint_20000_2.2971.pt",
+    "checkpoint_step": 0,
 
     "log_file": "sft.log"
 }
