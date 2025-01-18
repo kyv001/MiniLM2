@@ -15,6 +15,9 @@
     "total_steps": 20000,
     "validation_interval": 50,
 
+    "top_p": 0.1,
+    "temperature": 0.5,
+
     "checkpoint_file": "checkpoint_20000_2.2971.pt",
     "checkpoint_step": 20000,
 

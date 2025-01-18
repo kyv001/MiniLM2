@@ -71,9 +71,17 @@ if __name__ == '__main__':
     torch.set_float32_matmul_precision('high') # 调整精度以加速推理
     history: list[tuple[str, str]] = []
     while True:
-        try:
-            text = input(">>> ")
-        except EOFError:
+        text = ""
+        while True:
+            try:
+                if not text:
+                    text += input("use '!exit' to quit, ^D to submit> ") + "\n"
+                else:
+                    text += input("> ") + "\n"
+            except EOFError:
+                break
+        text = text.strip()
+        if text == "!exit":
             break
         # 加入历史记录
         history = append_history(history, "human", text)
@@ -87,9 +95,9 @@ if __name__ == '__main__':
             while True:
                 try:
                     output = model(input_ids)
-                    logits = F.softmax(output[0][-1], dim=-1)
-                    # 采样输出，取概率最高的30个进行加权随机采样
-                    probs, indices = logits.topk(30)
+                    logits = F.softmax(output[0][-1] / train_config['temperature'], dim=-1)
+                    # 采样输出，取概率最高的n个进行加权随机采样
+                    probs, indices = logits.topk(round(vocab_size * train_config['top_p']))
                     token_id = indices[torch.multinomial(probs, 1)]
                     input_ids = torch.cat([input_ids, token_id.unsqueeze(0)], dim=1)[:, -train_config['max_length']:] # 自回归生成
                     token = tokenizer.id_to_token(token_id.item())

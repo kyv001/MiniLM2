@@ -49,9 +49,17 @@ if __name__ == '__main__':
 
     torch.set_float32_matmul_precision('high') # 调整精度以加速推理
     while True:
-        try:
-            text = input(">>> ")
-        except EOFError:
+        text = ""
+        while True:
+            try:
+                if not text:
+                    text += input("use '!exit' to quit, ^D to submit> ") + "\n"
+                else:
+                    text += input("> ") + "\n"
+            except EOFError:
+                break
+        text = text.strip()
+        if text == "!exit":
             break
         # 编码输入文本
         input_ids = tokenizer.encode(text).ids[-train_config['max_length']:]
@@ -61,9 +69,9 @@ if __name__ == '__main__':
             while True:
                 try:
                     output = model(input_ids)
-                    logits = F.softmax(output[0][-1], dim=-1)
-                    # 采样输出，取概率最高的30个进行加权随机采样
-                    probs, indices = logits.topk(30)
+                    logits = F.softmax(output[0][-1] / train_config['temperature'], dim=-1)
+                    # 采样输出，取概率最高的n个进行加权随机采样
+                    probs, indices = logits.topk(round(vocab_size * train_config['top_p']))
                     token = indices[torch.multinomial(probs, 1)]
                     if token.item() == config.SPECIAL_TOKENS["<eos>"]: # 遇到结束符则停止
                         print()
