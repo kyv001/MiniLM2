@@ -50,16 +50,16 @@ if __name__ == '__main__':
     torch.set_float32_matmul_precision('high') # 调整精度以加速推理
     while True:
         text = ""
-        while True:
-            try:
+        try:
+            while True:
                 if not text:
-                    text += input("Use '!exit' to quit, Enter then press ^D to submit> ") + "\n"
+                    text = input("Use '\\' to enter multi-line input. Press Ctrl-D to quit. > ")
                 else:
-                    text += input("> ") + "\n"
-            except EOFError:
-                break
-        text = text.strip()
-        if text == "!exit":
+                    text += input("> ")
+                if text[-1] != '\\':
+                    break
+                text = text[:-1] + "\n"
+        except EOFError:
             break
         # 编码输入文本
         input_ids = tokenizer.encode(text).ids[-train_config['max_length']:]

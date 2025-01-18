@@ -72,16 +72,17 @@ if __name__ == '__main__':
     history: list[tuple[str, str]] = []
     while True:
         text = ""
-        while True:
-            try:
+        try:
+            while True:
                 if not text:
-                    text += input("Use '!exit' to quit, Enter then press ^D to submit> ") + "\n"
+                    text = input("Use '\\' to enter multi-line input. Press Ctrl-D to quit. > ")
                 else:
-                    text += input("> ") + "\n"
-            except EOFError:
-                break
-        text = text.strip()
-        if text == "!exit":
+                    text += input("> ")
+                if text[-1] != '\\':
+                    break
+                text = text[:-1] + "\n"
+        except EOFError:
+            print()
             break
         # 加入历史记录
         history = append_history(history, "human", text)
