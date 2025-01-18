@@ -15,7 +15,7 @@ if __name__ == '__main__':
     val_steps: list[int] = []
     for line in lines:
         loss_type, step, lr, loss = line.strip().split(",")
-        if loss_type == "TRAIN":
+        if loss_type in ("TRAIN", "SFT"):
             losses.append(float(loss))
             lrs.append(float(lr))
             steps.append(int(step))
