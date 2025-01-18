@@ -39,7 +39,7 @@ def worker(q: Queue, tokenizer: Tokenizer, bin_path: str, mask_path: str, max_le
                 ids += ai_prefix_ids + ai_input_codes.ids + separator_ids
                 mask += ai_prefix_mask + [1] * (len(ai_input_codes)) + ai_separator_mask
             raw_ids = np.array(ids, dtype=np.uint16)
-            pad_len = max_length - raw_ids.shape[0] % max_length
+            pad_len = max_length + 1 - raw_ids.shape[0] % (max_length + 1)
             padded_ids = np.concat((raw_ids, np.zeros(pad_len, dtype=np.uint16)))
             padded_ids.tofile(f_bin)
             raw_mask = np.array(mask, dtype=np.bool)
