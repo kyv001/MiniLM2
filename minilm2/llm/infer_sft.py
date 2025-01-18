@@ -75,7 +75,7 @@ if __name__ == '__main__':
         while True:
             try:
                 if not text:
-                    text += input("use '!exit' to quit, ^D to submit> ") + "\n"
+                    text += input("Use '!exit' to quit, Enter then press ^D to submit> ") + "\n"
                 else:
                     text += input("> ") + "\n"
             except EOFError:
