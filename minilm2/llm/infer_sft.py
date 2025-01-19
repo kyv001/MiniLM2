@@ -65,11 +65,12 @@ if __name__ == '__main__':
 
     # 将模型移动到显存并编译以加速推理
     model.to(config.DEVICE)
-    model.compile()
+    # model.compile()
     model.eval()
 
     torch.set_float32_matmul_precision('high') # 调整精度以加速推理
     history: list[tuple[str, str]] = []
+    print("Use '!clear' to clear history. Use '!top_p x.xx' to adjust top_p. Use '!temperature x.xx' to adjust temperature.")
     while True:
         text = ""
         try:
@@ -84,6 +85,30 @@ if __name__ == '__main__':
         except EOFError:
             print()
             break
+        if text == "!clear":
+            history = []
+            print("History cleared.")
+            continue
+        if text.startswith("!top_p"):
+            try:
+                top_p = float(text.split()[1])
+                if top_p <= 0 or top_p > 1:
+                    raise ValueError
+                train_config['top_p'] = top_p
+                print(f"top_p set to {top_p}.")
+            except (ValueError, IndexError):
+                print("top_p value should be a float between 0 and 1. Usage: !top_p x.xx")
+            continue
+        if text.startswith("!temperature"):
+            try:
+                temperature = float(text.split()[1])
+                if temperature <= 0 or temperature > 2:
+                    raise ValueError
+                train_config['temperature'] = temperature
+                print(f"temperature set to {temperature}.")
+            except (ValueError, IndexError):
+                print("temperature value should be a float between 0 and 2. Usage: !temperature x.xx")
+            continue
         # 加入历史记录
         history = append_history(history, "human", text)
         # 构建输入
@@ -99,7 +124,10 @@ if __name__ == '__main__':
                     logits = F.softmax(output[0][-1] / train_config['temperature'], dim=-1)
                     # 采样输出，取概率最高的n个进行加权随机采样
                     probs, indices = logits.topk(round(vocab_size * train_config['top_p']))
-                    token_id = indices[torch.multinomial(probs, 1)]
+                    sample = torch.multinomial(probs, 1)
+                    token_id = indices[sample]
+                    prob = probs[sample].item()
+                    confidence_level = round(prob ** 0.5 * 16) # 开方以增大低概率时的颜色差异
                     input_ids = torch.cat([input_ids, token_id.unsqueeze(0)], dim=1)[:, -train_config['max_length']:] # 自回归生成
                     token = tokenizer.id_to_token(token_id.item())
                     if token == "\n":
@@ -108,10 +136,10 @@ if __name__ == '__main__':
                             break
                     else:
                         n_blankline = 0
-                    print(token, end="", flush=True)
+                    print(f"\033[1;38;5;{confidence_level + 239}m{token}\033[0m", end="", flush=True)
                     response += token
                 except KeyboardInterrupt:
-                    print()
+                    print("\033[0m")
                     break
         # 加入历史记录
         history = append_history(history, "ai", response)
