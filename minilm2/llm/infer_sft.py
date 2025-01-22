@@ -65,7 +65,7 @@ if __name__ == '__main__':
 
     # 将模型移动到显存并编译以加速推理
     model.to(config.DEVICE)
-    # model.compile()
+    model.compile()
     model.eval()
 
     torch.set_float32_matmul_precision('high') # 调整精度以加速推理
