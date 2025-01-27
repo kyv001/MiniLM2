@@ -6,18 +6,19 @@ from . import config
 from tokenizers import Tokenizer # type: ignore
 
 def build_context(history: list[tuple[str, str]], tokenizer: Tokenizer,
-                max_length: int) -> torch.Tensor:
+                max_length: int, system_prompt: str | None = None) -> torch.Tensor:
     ids = []
     human_prefix_ids = tokenizer.encode(config.HUMAN_PREFIX).ids
     ai_prefix_ids = tokenizer.encode(config.AI_PREFIX).ids
     separator_ids = tokenizer.encode("\n" * 3).ids
+    system_prompt_ids = tokenizer.encode(system_prompt).ids + separator_ids if system_prompt else []
     for i in range(len(history)):
         turn = history[i]
         ids += human_prefix_ids + tokenizer.encode(turn[0]).ids + separator_ids
         ids += ai_prefix_ids + tokenizer.encode(turn[1]).ids
         if i < len(history) - 1:
             ids += separator_ids
-    ids = ids[-max_length:]
+    ids = system_prompt_ids + ids[len(system_prompt_ids)-max_length:]
     return torch.LongTensor(ids).unsqueeze(0)
 
 def append_history(history: list[tuple[str, str]], role: str, text: str) -> list[tuple[str, str]]:
@@ -109,10 +110,22 @@ if __name__ == '__main__':
             except (ValueError, IndexError):
                 print("temperature value should be a float between 0 and 2. Usage: !temperature x.xx")
             continue
+        if text.startswith("!context"):
+            for i in build_context(
+                history,
+                tokenizer,
+                train_config['max_length'],
+                system_prompt=train_config.get("system_prompt")).squeeze():
+                print(tokenizer.id_to_token(i.item()), end="", flush=True)
+            print()
+            continue
+        if text.startswith("!history"):
+            print(history)
+            continue
         # 加入历史记录
         history = append_history(history, "human", text)
         # 构建输入
-        input_ids = build_context(history, tokenizer, train_config['max_length'])
+        input_ids = build_context(history, tokenizer, train_config['max_length'], train_config.get("system_prompt"))
         input_ids = input_ids.to(config.DEVICE)
         # 推理
         response = ""
@@ -142,4 +155,4 @@ if __name__ == '__main__':
                     print("\033[0m")
                     break
         # 加入历史记录
-        history = append_history(history, "ai", response)
+        history = append_history(history, "ai", response.strip())

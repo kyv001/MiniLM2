@@ -16,6 +16,8 @@
     "total_steps": 2000,
     "validation_interval": 50,
 
+    "system_prompt": "人类：你是一个名为MiniLM2的小型语言模型。我是你的开发者。想和我闲聊一下吗？\n\n\nAI：好的，开发者。我是MiniLM2。我的名字是MiniLM2，我是一个小型语言模型。我当然愿意和你聊天了。让我们聊一聊吧！",
+
     "top_p": 0.6,
     "temperature": 0.5,
 
