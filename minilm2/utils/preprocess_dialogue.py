@@ -18,8 +18,10 @@ def preprocess_dialogue(text_path: str, bin_path: str, mask_path: str, tokenizer
             open(bin_path, 'wb') as f_bin,
             open(mask_path, 'wb') as f_mask):
             for line in tqdm(f):
-                line = line.strip()
-                if line[:3] == 'A: ':
+                line = line.strip().replace("：", ": ")
+                if set(line[3:]) == {"嗯", "。"}:
+                    continue # 过滤无意义对话
+                if line.startswith('A: '):
                     if not history:
                         history.append([line[3:], ""])
                     else:
@@ -27,7 +29,7 @@ def preprocess_dialogue(text_path: str, bin_path: str, mask_path: str, tokenizer
                             history[-1][0] += line[3:]
                         else:
                             history.append([line[3:], ""])
-                elif line[:3] == 'B: ':
+                elif line.startswith('B: '):
                     if not history:
                         raise ValueError("B: line without A: line")
                     else:

@@ -1,5 +1,5 @@
 {
-    "dataset_path": "../../datasets/dialogue/dialogue.json",
+    "dataset_path": "../../datasets/dialogue/dataset.json",
     "tokenizer_path": "../tokenizer.json",
     "max_length": 1024,
     "model_dim": 1024,
@@ -21,8 +21,8 @@
     "top_p": 0.6,
     "temperature": 0.5,
 
-    "checkpoint_file": "checkpoint_18.pt",
-    "checkpoint_step": 18,
+    "checkpoint_file": "checkpoint_36.pt",
+    "checkpoint_step": 36,
 
     "log_file": "dialogue.log"
 }
