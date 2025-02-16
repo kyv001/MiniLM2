@@ -1,7 +1,8 @@
+import math
 import torch
 from tqdm import tqdm
 from torch.nn import functional as F
-from .model import LLM
+from .model import NGPT, RWKV7
 from . import config
 
 if __name__ == '__main__':
@@ -24,15 +25,25 @@ if __name__ == '__main__':
     print(f"==> Vocab size: {vocab_size}")
 
     # 根据配置文件创建模型
-    print("Loading model...")
-    model = LLM(
-        vocab_size=vocab_size,
-        dim=train_config['model_dim'],
-        max_length=train_config['max_length'],
-        n_heads=train_config['num_heads'],
-        n_blocks=train_config['num_layers'],
-        dropout=0 # 推理时不使用dropout
-    )
+    model_type = train_config["model"]
+    print(f"Loading {model_type} model...")
+    model: torch.nn.Module
+    if model_type == "NGPT":
+        model = NGPT(
+            vocab_size=vocab_size,
+            dim=train_config['model_dim'],
+            max_length=train_config['max_length'],
+            n_heads=train_config['num_heads'],
+            n_blocks=train_config['num_layers'],
+            dropout=0 # 推理时不使用dropout
+        )
+    elif model_type == "RWKV7":
+        model = RWKV7(
+            vocab_size=2 ** math.ceil(math.log2(vocab_size)), # 确保vocab_size为2的幂
+            dim=train_config['model_dim'],
+            n_blocks=train_config['num_layers'],
+            max_lr=train_config['max_learning_rate']
+        )
     # 统计参数量
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"==> Number of parameters: {params / 1e6:.2f}M")
