@@ -104,8 +104,8 @@ class CausalSelfAttention(nn.Module):
         sqkscale = 1 / dim ** 0.5
         self.restore_scale_sqk = sqkinit / sqkscale
         self.sqk = nn.Parameter(torch.ones(n_heads, 1, self.head_dim) * sqkscale)
-        self.k_cache = {"past_k": torch.Tensor([]).to(torch.float16).to(self.device)}
-        self.v_cache = {"past_v": torch.Tensor([]).to(torch.float16).to(self.device)}
+        self.k_cache = {"past_k": None}
+        self.v_cache = {"past_v": None}
 
 
     def forward(self, x: torch.Tensor, position_idx):
@@ -125,29 +125,22 @@ class CausalSelfAttention(nn.Module):
             v = torch.cat([self.v_cache["past_v"], v], dim=-2)
             self.k_cache["past_k"] = k
             self.v_cache["past_v"] = v
-            x = (
-                nn.functional.scaled_dot_product_attention(q, k, v,
-                                                           attn_mask=torch.zeros([1, k.shape[-2]], dtype=q.dtype,
-                                                                                 device=self.device),
-                                                           is_causal=False, dropout_p=self.dropout,
-                                                           scale=self.head_dim ** 0.5)
-                    .transpose(1, 2)
-                    .reshape(B, T, C)
-            )
         else:
             q = self.pe(q).to(x.dtype) * actual_sqk
             k = self.pe(k).to(x.dtype) * actual_sqk
             self.k_cache["past_k"] = k
             self.v_cache["past_v"] = v
-            # (B, n_heads, T, head_dim) -T(1, 2)-> (B, T, n_heads, head_dim)
-            # -view-> (B, T, C)
-            x = (
-                nn.functional.scaled_dot_product_attention(q, k, v,
-                                                           is_causal=True, dropout_p=self.dropout,
-                                                           scale=self.head_dim ** 0.5)
-                    .transpose(1, 2)
-                    .reshape(B, T, C)
-            )
+            
+        # (B, n_heads, T, head_dim) -T(1, 2)-> (B, T, n_heads, head_dim)
+        # -view-> (B, T, C)
+        x = (
+            nn.functional.scaled_dot_product_attention(q, k, v,attn_mask=torch.zeros([1, k.shape[-2]], dtype=q.dtype,
+                                                                                     device=self.device),
+                                                       is_causal=False, dropout_p=self.dropout,
+                                                       scale=self.head_dim ** 0.5)
+                .transpose(1, 2)
+                .reshape(B, T, C)
+        )
 
         return normalize(self.o_proj(x))
 
