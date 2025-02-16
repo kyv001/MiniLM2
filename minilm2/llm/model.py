@@ -31,20 +31,15 @@ class RotatoryPositionalEncoding(nn.Module):
         self.register_buffer('positions_cos', positions_cos)
         self.dim = dim
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, position_idx: int) -> torch.Tensor:
         x_real = x[..., :self.dim // 2]  # (x.size(-2), dim//2)
         x_imag = x[..., self.dim // 2:]
-        pos_cos = self.positions_cos[:x.size(-2)]  # (x.size(-2), dim//2)
-        pos_sin = self.positions_sin[:x.size(-2)]
-        y_real = x_real * pos_cos-x_imag * pos_sin
-        y_imag = x_real * pos_sin+x_imag * pos_cos
-        return torch.cat([y_real, y_imag], dim=-1)
-
-    def apply_abs_position_rope(self, x: torch.Tensor, position_idx: int):  # 为kvcache获取绝对位置编码
-        x_real = x[..., :self.dim // 2]  # (x.size(-2), dim//2)
-        x_imag = x[..., self.dim // 2:]
-        pos_cos = self.positions_cos[position_idx]  # (x.size(-2), dim//2)
-        pos_sin = self.positions_sin[position_idx]
+        if position_idx:
+            pos_cos = self.positions_cos[position_idx]  # 获取kv cache需要的相对位置编码
+            pos_sin = self.positions_sin[position_idx]
+        else:
+            pos_cos = self.positions_cos[:x.size(-2)]  # (x.size(-2), dim//2)
+            pos_sin = self.positions_sin[:x.size(-2)]
         y_real = x_real * pos_cos-x_imag * pos_sin
         y_imag = x_real * pos_sin+x_imag * pos_cos
         return torch.cat([y_real, y_imag], dim=-1)
@@ -107,7 +102,6 @@ class CausalSelfAttention(nn.Module):
         self.k_cache = {"past_k": None}
         self.v_cache = {"past_v": None}
 
-
     def forward(self, x: torch.Tensor, position_idx):
         B, T, C = x.shape
         actual_sqk = self.sqk * self.restore_scale_sqk  # (n_heads, 1, head_dim)
@@ -118,29 +112,37 @@ class CausalSelfAttention(nn.Module):
         k = self.k_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
         v = self.v_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
 
+        position_idx = position_idx if T==1 else None
+        q = self.pe(q, position_idx).to(x.dtype) * actual_sqk
+        k = self.pe(k, position_idx).to(x.dtype) * actual_sqk
+
+        # (B, n_heads, T, head_dim) -T(1, 2)-> (B, T, n_heads, head_dim)
+        # -view-> (B, T, C)
+
         if T==1:
-            q = self.pe.apply_abs_position_rope(q, position_idx).to(x.dtype) * actual_sqk
-            k = self.pe.apply_abs_position_rope(k, position_idx).to(x.dtype) * actual_sqk
             k = torch.cat([self.k_cache["past_k"], k], dim=-2)
             v = torch.cat([self.v_cache["past_v"], v], dim=-2)
             self.k_cache["past_k"] = k
             self.v_cache["past_v"] = v
+            x = (
+                nn.functional.scaled_dot_product_attention(q, k, v,
+                                                           attn_mask=torch.zeros([1, k.shape[-2]],
+                                                           dtype=q.dtype,device=self.device),
+                                                           is_causal=False, dropout_p=self.dropout,
+                                                           scale=self.head_dim ** 0.5)
+                    .transpose(1, 2)
+                    .reshape(B, T, C)
+            )
         else:
-            q = self.pe(q).to(x.dtype) * actual_sqk
-            k = self.pe(k).to(x.dtype) * actual_sqk
             self.k_cache["past_k"] = k
             self.v_cache["past_v"] = v
-            
-        # (B, n_heads, T, head_dim) -T(1, 2)-> (B, T, n_heads, head_dim)
-        # -view-> (B, T, C)
-        x = (
-            nn.functional.scaled_dot_product_attention(q, k, v,attn_mask=torch.zeros([1, k.shape[-2]], dtype=q.dtype,
-                                                                                     device=self.device),
-                                                       is_causal=False, dropout_p=self.dropout,
-                                                       scale=self.head_dim ** 0.5)
-                .transpose(1, 2)
-                .reshape(B, T, C)
-        )
+            x = (
+                nn.functional.scaled_dot_product_attention(q, k, v,
+                                                           is_causal=True, dropout_p=self.dropout,
+                                                           scale=self.head_dim ** 0.5)
+                    .transpose(1, 2)
+                    .reshape(B, T, C)
+            )
 
         return normalize(self.o_proj(x))
 
