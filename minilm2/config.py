@@ -6,5 +6,7 @@ class Config:
     NUM_WORKERS: int = 4
     DEVICE: str = "cuda"
 
+    ENABLE_KVCACHE: bool = True
+
     HUMAN_PREFIX: str = "人类："
     AI_PREFIX: str = "AI："
