@@ -34,7 +34,7 @@ if __name__ == '__main__':
     import os
     import json
     if len(sys.argv) < 2:
-        print('Usage: python -m minilm2.llm.eval_pretrained <config_path>')
+        print('Usage: python -m minilm2.llm.infer_sft <config_path>')
         exit(1)
     config_path = sys.argv[1]
     config_dir = os.path.dirname(config_path) # 配置文件路径
