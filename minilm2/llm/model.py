@@ -6,13 +6,15 @@ import torch.nn.functional as F
 # nGPT
 normalize = lambda x, dim=-1: F.normalize(x, p=2, dim=dim)
 
+
 class RotatoryPositionalEncoding(nn.Module):
     """旋转位置编码"""
+
     def __init__(self, dim: int, max_length: int):
         super().__init__()
         assert dim % 2 == 0
         positions = torch.arange(0, max_length, 1)
-        theta = 1 / 10000 ** (torch.arange(0, dim, 2) / dim) # thetai = 1/10000^(2i/dim)
+        theta = 1 / 10000 ** (torch.arange(0, dim, 2) / dim)  # thetai = 1/10000^(2i/dim)
         """
             theta0  theta1  theta2  theta3 ... theta(dim/2-1)
         m=0 0theta0 0theta1 0theta2 0theta3
@@ -22,22 +24,22 @@ class RotatoryPositionalEncoding(nn.Module):
         ...
         m=max_length-1                         ...
         """
-        positions_theta = positions.unsqueeze(1) * theta.unsqueeze(0) # (max_length, dim//2)
+        positions_theta = positions.unsqueeze(1) * theta.unsqueeze(0)  # (max_length, dim//2)
         positions_sin = torch.sin(positions_theta)
         positions_cos = torch.cos(positions_theta)
         self.register_buffer('positions_sin', positions_sin)
         self.register_buffer('positions_cos', positions_cos)
         self.dim = dim
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_real = x[..., :self.dim // 2] # (x.size(-2), dim//2)
-        x_imag = x[...,  self.dim // 2:]
-        pos_cos = self.positions_cos[:x.size(-2)] # (x.size(-2), dim//2)
-        pos_sin = self.positions_sin[:x.size(-2)]
+    def forward(self, x: torch.Tensor, *, offset: int = 0) -> torch.Tensor:
+        x_real = x[..., :self.dim // 2]  # (x.size(-2), dim//2)
+        x_imag = x[..., self.dim // 2:]
+        pos_cos = self.positions_cos[offset:offset + x.size(-2)]  # (x.size(-2), dim//2)
+        pos_sin = self.positions_sin[offset:offset + x.size(-2)]
         y_real = x_real * pos_cos - x_imag * pos_sin
         y_imag = x_real * pos_sin + x_imag * pos_cos
         return torch.cat([y_real, y_imag], dim=-1)
-        
+
 class MLP(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, dropout: float):
         super().__init__()
@@ -70,11 +72,13 @@ class MLP(nn.Module):
         self.v_proj.weight.data.copy_(normalize(self.v_proj.weight.data))
         self.o_proj.weight.data.copy_(normalize(self.o_proj.weight.data, 0))
 
+
 class CausalSelfAttention(nn.Module):
     """带因果关系的多头自注意力，使用Flash Attention和RoPE"""
+
     def __init__(self, dim: int, max_length: int, n_heads: int, dropout: float):
         super().__init__()
-        assert dim % n_heads == 0
+        assert dim % n_heads==0
         self.n_heads = n_heads
         self.head_dim = dim // n_heads
         self.q_proj = nn.Linear(dim, dim, bias=False)
@@ -83,6 +87,7 @@ class CausalSelfAttention(nn.Module):
         self.o_proj = nn.Linear(dim, dim, bias=False)
         self.pe = RotatoryPositionalEncoding(self.head_dim, max_length)
         self.dropout = dropout
+        self.max_length = max_length
 
         # QK的缩放因子
         sqkinit = 1.0
@@ -90,25 +95,75 @@ class CausalSelfAttention(nn.Module):
         self.restore_scale_sqk = sqkinit / sqkscale
         self.sqk = nn.Parameter(torch.ones(n_heads, 1, self.head_dim) * sqkscale)
 
+        # KV Cache
+        self.k_cache: torch.Tensor | None = None
+        self.v_cache: torch.Tensor | None = None
+
     def forward(self, x: torch.Tensor):
         B, T, C = x.shape
-        actual_sqk = self.sqk * self.restore_scale_sqk # (n_heads, 1, head_dim)
+        actual_sqk = self.sqk * self.restore_scale_sqk  # (n_heads, 1, head_dim)
         # (B, T, C) -proj-> (B, T, C)
         # -view-> (B, T, n_heads, head_dim)
         # -T(1, 2)-> (B, n_heads, T, head_dim)
-        q = self.pe(self.q_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)) * actual_sqk
-        k = self.pe(self.k_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)) * actual_sqk
+        q = self.q_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
+        k = self.k_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
         v = self.v_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
+        
+        q = self.pe(q).to(x.dtype) * actual_sqk
+        k = self.pe(k).to(x.dtype) * actual_sqk
+
         # (B, n_heads, T, head_dim) -T(1, 2)-> (B, T, n_heads, head_dim)
         # -view-> (B, T, C)
         x = (
-            nn.functional.scaled_dot_product_attention(q, k, v,
-                    is_causal=True, dropout_p=self.dropout,
-                    scale=self.head_dim ** 0.5)
+            nn.functional.scaled_dot_product_attention(
+                q, k, v,
+                is_causal=True, dropout_p=self.dropout,
+                scale=self.head_dim ** 0.5)
             .transpose(1, 2)
             .reshape(B, T, C)
         )
+
         return normalize(self.o_proj(x))
+
+    def update(self, x: torch.Tensor): # 更新kv cache
+        B, T, C = x.shape
+        actual_sqk = self.sqk * self.restore_scale_sqk  # (n_heads, 1, head_dim)
+        # (B, T, C) -proj-> (B, T, C)
+        # -view-> (B, T, n_heads, head_dim)
+        # -T(1, 2)-> (B, n_heads, T, head_dim)
+        q = self.q_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
+        k = self.k_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
+        v = self.v_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
+
+        if self.k_cache is not None and self.v_cache is not None:
+            k = torch.cat([self.k_cache, k], dim=-2)[..., -self.max_length:, :]
+            v = torch.cat([self.v_cache, v], dim=-2)[..., -self.max_length:, :]
+        self.k_cache = k
+        self.v_cache = v
+
+        q = self.pe(q, offset=k.size(-2) - T).to(x.dtype) * actual_sqk
+        k = self.pe(k).to(x.dtype) * actual_sqk
+
+        # 手动构造因果掩码，因为nn.functional.scaled_dot_product_attention不支持Q和KV长度不同时自动创建掩码
+        attn_mask = torch.ones(T, k.size(-2), dtype=torch.bool, device=x.device).tril(k.size(-2) - T)
+
+        # (B, n_heads, T, head_dim) -T(1, 2)-> (B, T, n_heads, head_dim)
+        # -view-> (B, T, C)
+        x = (
+            nn.functional.scaled_dot_product_attention(
+                q, k, v,
+                attn_mask=attn_mask, dropout_p=self.dropout,
+                scale=self.head_dim ** 0.5)
+            .transpose(1, 2)
+            .reshape(B, T, C)
+        )
+
+        return normalize(self.o_proj(x))
+
+    @torch.no_grad()
+    def clear_cache(self) -> None:
+        self.k_cache = None
+        self.v_cache = None
 
     @torch.no_grad()
     def normalize(self) -> None:
@@ -117,8 +172,10 @@ class CausalSelfAttention(nn.Module):
         self.v_proj.weight.data.copy_(normalize(self.v_proj.weight.data))
         self.o_proj.weight.data.copy_(normalize(self.o_proj.weight.data, 0))
 
+
 class NGPTBlock(nn.Module):
     """一个Decoder块"""
+
     def __init__(self, dim: int, max_length: int, n_heads: int, dropout: float):
         super().__init__()
         self.attn = CausalSelfAttention(dim, max_length, n_heads, dropout)
@@ -141,15 +198,24 @@ class NGPTBlock(nn.Module):
         x = normalize(x + (self.mlp(x) - x) * actual_lr_m)
         return x
 
+    def update(self, x: torch.Tensor):
+        actual_lr_a = self.lr_a * self.restore_scale_a
+        actual_lr_m = self.lr_m * self.restore_scale_m
+        x = normalize(x + (self.attn.update(x) - x) * actual_lr_a)
+        x = normalize(x + (self.mlp(x) - x) * actual_lr_m)
+        return x
+
     @torch.no_grad()
     def normalize(self) -> None:
         self.attn.normalize()
         self.mlp.normalize()
 
+
 class NGPT(nn.Module):
     """大模型本体"""
+
     def __init__(self, vocab_size: int, dim: int, max_length: int, n_heads: int,
-                n_blocks: int, dropout: float):
+                 n_blocks: int, dropout: float):
         super().__init__()
         self.wte = nn.Embedding(vocab_size, dim)
         self.blocks = nn.ModuleList([
@@ -173,8 +239,17 @@ class NGPT(nn.Module):
         actual_sz = self.sz * self.restore_scale
         return x * actual_sz
 
+    @torch.no_grad() # 此方法仅用于推理，不需要梯度
+    def update(self, x: torch.Tensor):
+        x = self.wte(x)
+        for block in self.blocks:
+            x = block.update(x)
+        x = self.lmhead(x)
+        actual_sz = self.sz * self.restore_scale
+        return x * actual_sz
+
     def save(self, path: str):
-        torch.save(self.state_dict(), path) # 保存模型参数防止带上不必要的前缀
+        torch.save(self.state_dict(), path)  # 保存模型参数防止带上不必要的前缀
 
     @torch.no_grad()
     def normalize(self) -> None:
@@ -182,18 +257,20 @@ class NGPT(nn.Module):
         self.lmhead.weight.data.copy_(normalize(self.lmhead.weight.data))
         for block in self.blocks:
             block.normalize()
-        
+
+
 # RWKV-7: https://github.com/BlinkDL/RWKV-LM
-from fla.layers import RWKV7Attention # type: ignore
+from fla.layers import RWKV7Attention  # type: ignore
+
 
 class TMix(nn.Module):
     def __init__(self, dim: int, block_id: int, n_blocks: int):
         super().__init__()
         # 根据BlinkDL原版实现中的建议取值
         decay_low_rank_dim = max(32, int(round(1.8 * (dim ** 0.5) / 32) * 32))
-        a_low_rank_dim = max(32, int(round(1.8 * (dim ** 0.5) / 32) * 32))
-        v_low_rank_dim = max(32, int(round(1.3 * (dim ** 0.5) / 32) * 32))
-        gate_low_rank_dim = max(32, int(round(0.6 * (dim ** 0.8) / 32) * 32))
+        a_low_rank_dim     = max(32, int(round(1.8 * (dim ** 0.5) / 32) * 32))
+        v_low_rank_dim     = max(32, int(round(1.3 * (dim ** 0.5) / 32) * 32))
+        gate_low_rank_dim  = max(32, int(round(0.6 * (dim ** 0.8) / 32) * 32))
         self.rwkv7 = RWKV7Attention(
             "chunk",
             dim,
@@ -203,7 +280,7 @@ class TMix(nn.Module):
             v_low_rank_dim=v_low_rank_dim,
             gate_low_rank_dim=gate_low_rank_dim
         )
-        with torch.no_grad(): # 参数初始化，从BlinkDL原版实现中复制过来的
+        with torch.no_grad():  # 参数初始化，从BlinkDL原版实现中复制过来的
             def ortho_init(x, scale):
                 shape = x.shape
                 if len(shape) == 2:
@@ -217,8 +294,8 @@ class TMix(nn.Module):
                     assert False
                 return x
 
-            ratio_1_to_0 = 1 - (block_id / n_blocks)
-            ratio_0_to_1 = block_id / (n_blocks - 1)
+            ratio_1_to_0 = 1-(block_id / n_blocks)
+            ratio_0_to_1 = block_id / (n_blocks-1)
             ddd = torch.ones(dim)
             for i in range(dim):
                 ddd[i] = i / dim
@@ -236,8 +313,8 @@ class TMix(nn.Module):
             w2 = ortho_init(torch.zeros(decay_low_rank_dim, dim), 0.1)
             decay_speed = torch.ones(dim)
             for n in range(dim):
-                decay_speed[n] = -7 + 5 * (n / (dim - 1)) ** (0.85 + 1.0 * ratio_0_to_1 ** 0.5) # WTF?
-            w0 = decay_speed + 0.5
+                decay_speed[n] = - 7 + 5 * (n / (dim-1)) ** (0.85+1.0 * ratio_0_to_1 ** 0.5)  # WTF?
+            w0 = decay_speed+0.5
             self.rwkv7.w_lora.lora[0].weight.data.copy_(w1.T)
             self.rwkv7.w_lora.lora[2].weight.data.copy_(w2.T)
             self.rwkv7.w_lora.lora[2].bias.data.copy_(w0)
@@ -249,10 +326,10 @@ class TMix(nn.Module):
             self.rwkv7.a_lora.lora[2].weight.data.copy_(a2.T)
             self.rwkv7.a_lora.lora[2].bias.data.copy_(a0)
 
-            if block_id != 0: # 第一层没有这个模块
+            if block_id != 0:  # 第一层没有这个模块
                 v1 = torch.zeros(dim, v_low_rank_dim)
                 v2 = ortho_init(torch.zeros(v_low_rank_dim, dim), 0.1)
-                v0 = torch.zeros(dim) + 1.0
+                v0 = torch.zeros(dim)+1.0
                 self.rwkv7.v_lora.lora[0].weight.data.copy_(v1.T)
                 self.rwkv7.v_lora.lora[2].weight.data.copy_(v2.T)
                 self.rwkv7.v_lora.lora[2].bias.data.copy_(v0)
@@ -263,17 +340,18 @@ class TMix(nn.Module):
             self.rwkv7.g_lora.lora[0].weight.data.copy_(g1.T)
             self.rwkv7.g_lora.lora[2].weight.data.copy_(g2.T)
 
-            self.rwkv7.r_proj.weight.data.uniform_(-0.5/(dim**0.5), 0.5/(dim**0.5))
-            self.rwkv7.k_proj.weight.data.uniform_(-0.05/(dim**0.5), 0.05/(dim**0.5))
-            self.rwkv7.v_proj.weight.data.uniform_(-0.5/(dim**0.5), 0.5/(dim**0.5))
+            self.rwkv7.r_proj.weight.data.uniform_(-0.5 / (dim ** 0.5), 0.5 / (dim ** 0.5))
+            self.rwkv7.k_proj.weight.data.uniform_(-0.05 / (dim ** 0.5), 0.05 / (dim ** 0.5))
+            self.rwkv7.v_proj.weight.data.uniform_(-0.5 / (dim ** 0.5), 0.5 / (dim ** 0.5))
             self.rwkv7.o_proj.weight.data.zero_()
 
             del ddd, x_r, x_w, x_k, x_v, x_a, x_g, x_x, w1, w2, w0, a1, a2, a0, g1, g2
-    
+
     def forward(self, x: torch.Tensor, v_first: torch.Tensor | None) -> tuple[torch.Tensor, torch.Tensor]:
         x_attn, _, past_key_values, v_first = self.rwkv7(x, v_first=v_first)
         assert v_first is not None, "v_first should not be None"
         return x_attn, v_first
+
 
 class CMix(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, block_id: int, n_blocks: int):
@@ -281,28 +359,30 @@ class CMix(nn.Module):
         self.dim = dim
         self.shift1 = nn.ZeroPad2d((0, 0, 1, -1))
         with torch.no_grad():
-            ratio_1_to_0 = 1 - (block_id / n_blocks)
+            ratio_1_to_0 = 1-(block_id / n_blocks)
             # ddd = torch.linspace(0, 1, dim) * (dim - 1) / dim
             ddd = torch.ones(dim)
             for i in range(dim):
                 ddd[i] = i / dim
-            self.x_k = nn.Parameter(1.0 - torch.pow(ddd, ratio_1_to_0 ** 4))
+            self.x_k = nn.Parameter(1.0-torch.pow(ddd, ratio_1_to_0 ** 4))
         self.key = nn.Linear(dim, hidden_dim, bias=False)
         self.value = nn.Linear(hidden_dim, dim, bias=False)
 
-        self.key.weight.data.uniform_(-0.5/(dim**0.5), 0.5/(dim**0.5))
+        self.key.weight.data.uniform_(-0.5 / (dim ** 0.5), 0.5 / (dim ** 0.5))
         self.value.weight.data.zero_()
 
         del ddd
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        xx = self.shift1(x) - x
-        k = x + xx * self.x_k
+        xx = self.shift1(x)-x
+        k = x+xx * self.x_k
         k = torch.relu(self.key(k)) ** 2
         return self.value(k)
 
+
 class RWKV7Block(nn.Module):
     """一个Decoder块"""
+
     def __init__(self, dim: int, block_id: int, n_blocks: int):
         super().__init__()
         self.attn = TMix(dim, block_id, n_blocks)
@@ -312,15 +392,17 @@ class RWKV7Block(nn.Module):
 
     def forward(self, x: torch.Tensor, v_first: torch.Tensor | None) -> tuple[torch.Tensor, torch.Tensor]:
         x_attn, v_first = self.attn(self.norm1(x), v_first=v_first)
-        x = x + x_attn
-        x = x + self.mlp(self.norm2(x))
+        x = x+x_attn
+        x = x+self.mlp(self.norm2(x))
         assert v_first is not None, "v_first should not be None"
         return x, v_first
 
+
 class RWKV7(nn.Module):
     """大模型本体"""
+
     def __init__(self, vocab_size: int, dim: int,
-                n_blocks: int, max_lr: float):
+                 n_blocks: int, max_lr: float):
         assert dim % 64 == 0, "dim必须是64的倍数"
         assert math.log2(vocab_size).is_integer(), "vocab_size必须是2的幂"
         super().__init__()
@@ -343,4 +425,4 @@ class RWKV7(nn.Module):
         return self.lmhead(self.norm_out(x))
 
     def save(self, path: str):
-        torch.save(self.state_dict(), path) # 保存模型参数防止带上不必要的前缀
+        torch.save(self.state_dict(), path)  # 保存模型参数防止带上不必要的前缀

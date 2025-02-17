@@ -76,12 +76,19 @@ if __name__ == '__main__':
         model.load_state_dict(torch.load(checkpoint_path, weights_only=True))
 
     # 将模型移动到显存并编译以加速推理
+    print(f"==> Using device: {config.DEVICE}")
+    torch.set_float32_matmul_precision('high') # 调整精度以加速推理
     model.to(config.DEVICE)
+    print(f"==> Compiling model...")
     model.compile(fullgraph=True)
     model.eval()
 
-    torch.set_float32_matmul_precision('high') # 调整精度以加速推理
     history: list[tuple[str, str]] = []
+
+    if config.ENABLE_KVCACHE:
+        print("==> KV Cache enabled.")
+        sysprompt = build_context([], tokenizer, train_config['max_length'], train_config.get("system_prompt")).to(config.DEVICE)
+        model.update(sysprompt) # 在缓存中加入初始输入
     print("Use '!clear' to clear history. Use '!top_p x.xx' to adjust top_p. Use '!temperature x.xx' to adjust temperature.")
     while True:
         text = ""
@@ -99,6 +106,10 @@ if __name__ == '__main__':
             break
         if text == "!clear":
             history = []
+            if config.ENABLE_KVCACHE:
+                model.clear_cache()
+                sysprompt = build_context([], tokenizer, train_config['max_length'], train_config.get("system_prompt")).to(config.DEVICE)
+                model.update(sysprompt) # 在缓存中加入初始输入
             print("History cleared.")
             continue
         if text.startswith("!top_p"):
@@ -142,7 +153,7 @@ if __name__ == '__main__':
         response = ""
         n_blankline = 0
         with torch.no_grad():
-            while True:
+            while not config.ENABLE_KVCACHE:
                 try:
                     output = model(input_ids)
                     logits = F.softmax(output[0][-1] / train_config['temperature'], dim=-1)
@@ -153,6 +164,35 @@ if __name__ == '__main__':
                     prob = probs[sample].item()
                     confidence_level = round(prob ** 0.5 * 16) # 开方以增大低概率时的颜色差异
                     input_ids = torch.cat([input_ids, token_id.unsqueeze(0)], dim=1)[:, -train_config['max_length']:] # 自回归生成
+                    token = tokenizer.id_to_token(token_id.item())
+                    if token == "\n":
+                        n_blankline += 1
+                        if n_blankline >= 3:
+                            break
+                    else:
+                        n_blankline = 0
+                    print(f"\033[1;38;5;{confidence_level + 239}m{token}\033[0m", end="", flush=True)
+                    response += token
+                except KeyboardInterrupt:
+                    print("\033[0m")
+                    break
+            
+            last_out: torch.Tensor | None = None
+            while config.ENABLE_KVCACHE:
+                try:
+                    if not last_out:
+                        input_ids = build_context(history[-1:], tokenizer, train_config['max_length']).to(config.DEVICE)
+                        last_out_logits = model.update(input_ids)[:, -1, :] # 更新缓存
+                    else:
+                        last_out_logits = model.update(last_out)[:, -1, :] # 更新缓存
+                    logits = F.softmax(last_out_logits[0] / train_config['temperature'], dim=-1)
+                    # 采样输出，取概率最高的n个进行加权随机采样
+                    probs, indices = logits.topk(round(vocab_size * train_config['top_p']))
+                    sample = torch.multinomial(probs, 1)
+                    token_id = indices[sample]
+                    last_out = token_id.unsqueeze(0)
+                    prob = probs[sample].item()
+                    confidence_level = round(prob ** 0.5 * 16) # 开方以增大低概率时的颜色差异
                     token = tokenizer.id_to_token(token_id.item())
                     if token == "\n":
                         n_blankline += 1
