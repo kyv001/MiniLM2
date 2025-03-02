@@ -1,9 +1,9 @@
 from . import config
-from tokenizers import Tokenizer # type: ignore
+from transformers import AutoTokenizer, PreTrainedTokenizer  # type: ignore
 import numpy as np
 from tqdm import tqdm
 
-def preprocess_openwebtext(text_path: str, bin_path: str, tokenizer: Tokenizer):
+def preprocess_openwebtext(text_path: str, bin_path: str, tokenizer: PreTrainedTokenizer):
     with open(text_path, 'r', encoding='utf-8') as f, open(bin_path, 'wb') as f_bin:
         n_blank_lines = 0
         text = ""
@@ -16,11 +16,11 @@ def preprocess_openwebtext(text_path: str, bin_path: str, tokenizer: Tokenizer):
                 continue
             n_blank_lines += 1
             if n_blank_lines >= 3:
-                ids = tokenizer.encode(text).ids + [config.SPECIAL_TOKENS["<eos>"]]
+                ids = tokenizer.encode(text) + [config.SPECIAL_TOKENS["<eos>"]]
                 np.array(ids, dtype=np.uint16).tofile(f_bin)
                 n_blank_lines = 0
                 text = ""
-        ids = tokenizer.encode(text).ids + [config.SPECIAL_TOKENS["<eos>"]]
+        ids = tokenizer.encode(text) + [config.SPECIAL_TOKENS["<eos>"]]
         np.array(ids, dtype=np.uint16).tofile(f_bin)
 
 if __name__ == '__main__':
@@ -31,5 +31,5 @@ if __name__ == '__main__':
     encoder_path = sys.argv[1]
     text_path = sys.argv[2]
     bin_path = sys.argv[3]
-    tokenizer = Tokenizer.from_file(encoder_path)
+    tokenizer = AutoTokenizer.from_pretrained(encoder_path, trust_remote_code=True)
     preprocess_openwebtext(text_path, bin_path, tokenizer)

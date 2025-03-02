@@ -1,17 +1,17 @@
 from . import config
-from tokenizers import Tokenizer # type: ignore
+from transformers import PreTrainedTokenizer, AutoTokenizer # type: ignore
 import numpy as np
 from tqdm import tqdm
 
-def preprocess_dialogue(text_path: str, bin_path: str, mask_path: str, tokenizer: Tokenizer, max_length: int):
+def preprocess_dialogue(text_path: str, bin_path: str, mask_path: str, tokenizer: PreTrainedTokenizer, max_length: int):
     history: list[list[str]] = []
 
-    separator_ids = tokenizer.encode("\n" * 3).ids
+    separator_ids = tokenizer.encode("\n" * 3)
     human_separator_mask = [0] * len(separator_ids)
     ai_separator_mask = [1] * len(separator_ids)
-    human_prefix_ids = tokenizer.encode(config.HUMAN_PREFIX).ids
+    human_prefix_ids = tokenizer.encode(config.HUMAN_PREFIX)
     human_prefix_mask = [0] * len(human_prefix_ids)
-    ai_prefix_ids = tokenizer.encode(config.AI_PREFIX).ids
+    ai_prefix_ids = tokenizer.encode(config.AI_PREFIX)
     ai_prefix_mask = [0] * len(ai_prefix_ids)
 
     with (  open(text_path, 'r', encoding='utf-8') as f,
@@ -44,8 +44,8 @@ def preprocess_dialogue(text_path: str, bin_path: str, mask_path: str, tokenizer
                     continue
                 if not ai_utt:
                     continue
-                human_ids = tokenizer.encode(human_utt).ids
-                ai_ids = tokenizer.encode(ai_utt).ids
+                human_ids = tokenizer.encode(human_utt)
+                ai_ids = tokenizer.encode(ai_utt)
                 human_mask = [0] * len(human_ids)
                 ai_mask = [1] * len(ai_ids)
                 ids += (
@@ -79,5 +79,5 @@ if __name__ == '__main__':
     bin_path = sys.argv[3]
     mask_path = sys.argv[4]
     max_length = int(sys.argv[5])
-    tokenizer = Tokenizer.from_file(encoder_path)
+    tokenizer = AutoTokenizer.from_pretrained(encoder_path)
     preprocess_dialogue(text_path, bin_path, mask_path, tokenizer, max_length)
