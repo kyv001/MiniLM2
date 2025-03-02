@@ -4,7 +4,7 @@
 
 ## 使用方法
 
-参见[GitHub仓库](https://github.com/SwarmClone/MiniLM2/tree/huggingface)中`minilm2/utils/test_dialogue_model.py`。因为包含了模型代码，请注意设置`trust_remote_code=True`。
+参见[GitHub仓库](https://github.com/SwarmClone/MiniLM2)中`minilm2/utils/test_dialogue_model.py`。因为包含了模型代码，请注意设置`trust_remote_code=True`。
 
 ## 模型输出实例
 
