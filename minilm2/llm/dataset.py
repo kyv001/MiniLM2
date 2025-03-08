@@ -83,13 +83,13 @@ def from_file(config_path: str, max_lenth: int) -> tuple[PreTrainDataset, PreTra
 if __name__ == '__main__':
     import sys
     from torch.utils.data import DataLoader
-    from tokenizers import Tokenizer # type: ignore
+    from transformers import AutoTokenizer # type: ignore
     if len(sys.argv) < 3:
         print("Usage: python -m minilm2.llm.dataset <tokenizer_path> <data_path>")
         exit(1)
     tokenizer_path = sys.argv[1]
     data_path = sys.argv[2]
-    tokenizer = Tokenizer.from_file(tokenizer_path)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
     print(f"Loading dataset from {data_path}...")
     _, dataset = from_file(data_path, 1024)
     dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
@@ -98,10 +98,8 @@ if __name__ == '__main__':
         print(y)
         print(x.shape, y.shape)
         for i in range(2):
-            for idx in x[i].tolist():
-                print(tokenizer.id_to_token(idx), end="")
-            for idy in y[i].tolist():
-                print(tokenizer.id_to_token(idy), end="")
+            print(tokenizer.decode(x[i].tolist()))
+            print(tokenizer.decode(y[i].tolist()))
         try:
             input()
         except EOFError:
