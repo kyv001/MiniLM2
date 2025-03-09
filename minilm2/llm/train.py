@@ -81,7 +81,7 @@ if __name__ == '__main__':
     )
 
     # 定义优化器
-    optimizer = optim.AdamW(model.parameters(), fused=True, weight_decay=0.0)
+    optimizer = optim.AdamW(model.parameters(), fused=True, betas=(0.9, 0.99), weight_decay=0.01)
 
     # 定义学习率衰减策略
     lr_schedule = get_lr_schedule(
