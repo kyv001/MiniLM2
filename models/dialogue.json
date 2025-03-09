@@ -24,6 +24,7 @@
     "temperature": 0.5,
 
     "model_path": "transformers/ngpt/sft0.4b",
+    "optimizer_state_path": "",
     "checkpoint_step": 0,
 
     "log_file": "dialogue.log"

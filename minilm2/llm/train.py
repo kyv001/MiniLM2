@@ -82,6 +82,9 @@ if __name__ == '__main__':
 
     # 定义优化器
     optimizer = optim.AdamW(model.parameters(), fused=True, betas=(0.9, 0.99), weight_decay=0.01)
+    if train_config['optimizer_state_path']:
+        print(f"==> Loading optimizer state from {os.path.join(config_dir, train_config['optimizer_state_path'])}")
+        optimizer.load_state_dict(torch.load(os.path.join(config_dir, train_config['optimizer_state_path']), weights_only=True))
 
     # 定义学习率衰减策略
     lr_schedule = get_lr_schedule(
@@ -156,6 +159,9 @@ if __name__ == '__main__':
             for i in tqdm(used_indexes):
                 f.write(f'{i}\n')
         print(f"==> Unused indexes saved to {lst_name}")
+        optimizer_state = optimizer.state_dict()
+        torch.save(optimizer_state, os.path.join(config_dir, f'optimizer_{step}.pt'))
+        print(f"==> Optimizer state saved to {os.path.join(config_dir, f'optimizer_{step}.pt')}")
         print("!! REMEMBER TO UPDATE THE DATASET FILE AND CONFIG FILE TO USE THE UPDATED LIST AND CHECKPOINT !!")
 
     finally:

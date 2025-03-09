@@ -24,6 +24,7 @@
 
     "model_path": "transformers/ngpt/sft0.4b",
     "checkpoint_file": "checkpoint_2000_bilingual.pt",
+    "optimizer_state_path": "",
     "checkpoint_step": 2000,
 
     "log_file": "sft.log"

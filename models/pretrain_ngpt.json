@@ -21,6 +21,7 @@
     "temperature": 0.5,
 
     "model_path": "transformers/ngpt/pretrain0.4b",
+    "optimizer_state_path": "",
     "checkpoint_step": 20000,
 
     "log_file": "pretrain.log"

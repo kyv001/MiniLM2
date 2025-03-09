@@ -19,8 +19,9 @@
     "top_p": 0.1,
     "temperature": 0.5,
 
-    "model_path": "",
-    "checkpoint_step": 0,
+    "model_path": "checkpoint_257.pt",
+    "optimizer_state_path": "optimizer_257.pt",
+    "checkpoint_step": 257,
 
     "log_file": "pretrain.log"
 }
