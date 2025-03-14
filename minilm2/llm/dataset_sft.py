@@ -88,13 +88,13 @@ def from_file(config_path: str, max_lenth: int) -> SFTDataset: # SFT不需要验
 if __name__ == '__main__':
     import sys
     from torch.utils.data import DataLoader
-    from tokenizers import Tokenizer # type: ignore
+    from transformers import AutoTokenizer # type: ignore
     if len(sys.argv) < 3:
         print("Usage: python -m minilm2.llm.dataset_sft <tokenizer_path> <data_path>")
         exit(1)
     tokenizer_path = sys.argv[1]
     data_path = sys.argv[2]
-    tokenizer = Tokenizer.from_file(tokenizer_path)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
     print(f"Loading dataset from {data_path}...")
     dataset = from_file(data_path, 1024)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
@@ -104,7 +104,7 @@ if __name__ == '__main__':
                 print("\033[31m", end="")
             else:
                 print("\033[0m", end="")
-            print(tokenizer.id_to_token(y[0][i].item()), end="")
+            print(tokenizer.convert_ids_to_tokens([x[0][i].item()])[0], end="")
         try:
             input()
         except EOFError:
