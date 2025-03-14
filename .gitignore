@@ -176,3 +176,6 @@ datasets/
 # Checkpoints
 *.pt
 *.safetensors
+
+# IPython notebooks
+*.ipynb
