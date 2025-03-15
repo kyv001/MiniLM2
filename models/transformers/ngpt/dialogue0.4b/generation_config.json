@@ -6,5 +6,7 @@
   "top_p": 0.95,
   "temperature": 0.7,
   "use_cache": true,
-  "pad_token_id": 0
+  "pad_token_id": 0,
+  "repetition_penalty": 1.2,
+  "frequency_penalty": 1.2
 }
