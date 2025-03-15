@@ -116,17 +116,21 @@ class CausalSelfAttention(nn.Module):
             v = self.v_proj(xx).view(B, TT, self.n_heads, -1).transpose(1, 2)
             k = torch.cat([k_cache, k], dim=-2)
             v = torch.cat([v_cache, v], dim=-2)
+            q = self.q_proj(xx).view(B, TT, self.n_heads, -1).transpose(1, 2)
         else:
+            cache_size = 0
+            TT = T
             k = self.k_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
             v = self.v_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
-        q = self.q_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
+            q = self.q_proj(x).view(B, T, self.n_heads, -1).transpose(1, 2)
+            q_offset = 0
         
         k_cache, v_cache = k.clone().detach(), v.clone().detach()
 
-        q = self.pe(q).to(x.dtype) * actual_sqk
+        q = self.pe(q, offset=cache_size).to(x.dtype) * actual_sqk
         k = self.pe(k).to(x.dtype) * actual_sqk
 
-        attn_mask = torch.ones(T, k.size(-2), dtype=torch.bool, device=x.device).tril(k.size(-2) - T)
+        attn_mask = torch.ones(TT, T, dtype=torch.bool, device=x.device).tril(cache_size)
 
         # (B, n_heads, T, head_dim) -T(1, 2)-> (B, T, n_heads, head_dim)
         # -view-> (B, T, C)
@@ -136,7 +140,7 @@ class CausalSelfAttention(nn.Module):
                 attn_mask=attn_mask, dropout_p=self.dropout,
                 scale=self.head_dim ** 0.5)
             .transpose(1, 2)
-            .reshape(B, T, C)
+            .reshape(B, TT, C)
         )
 
         return normalize(self.o_proj(x)), (k_cache, v_cache)
@@ -218,11 +222,6 @@ class NGPT(PreTrainedModel, GenerationMixin):
         B, T = x.shape
         x = self.wte(x)
         key_values: list[tuple[torch.Tensor, torch.Tensor]] = []
-        cut_idx = T - self.config.max_position_embeddings
-        if cut_idx > 0:
-            x = x[:, cut_idx:]
-            if past_key_values is not None:
-                past_key_values = tuple((k[..., cut_idx:, :], v[..., cut_idx:, :]) for k, v in past_key_values)
         for i in range(self.config.n_blocks):
             block = self.blocks[i]
             if past_key_values is not None:
@@ -253,7 +252,14 @@ class NGPT(PreTrainedModel, GenerationMixin):
             token_type_ids=None,
             attention_mask=None,
             **kwargs):
-        # 准备输入，用于生成
         if len(input_ids.shape) == 1:
-            input_ids = input_ids.unsqueeze(0)
+            input_ids = input_ids.unsqueeze(0) # 如果缺少batch维度，手动加上
+        if input_ids.size(-1) > self.config.max_position_embeddings: # 如果超出了最大长度，将前面多出的部分截断
+            cut_idx = input_ids.size(-1) - self.config.max_position_embeddings
+            input_ids = input_ids[..., cut_idx:]
+            if past_key_values is not None:
+                past_key_values = tuple(
+                    (k[..., 1:, :], v[..., 1:, :]) for k, v in past_key_values
+                ) # 我们假定每次生成一个token，所以只需要去掉第一个位置
+            
         return {"x": input_ids, "use_cache": use_cache, "past_key_values": past_key_values if use_cache else None}
