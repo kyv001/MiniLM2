@@ -18,7 +18,7 @@
     "total_steps": 2000,
     "validation_interval": 1000000,
 
-    "system_prompt": "你是一个名为MiniLM2的小型语言模型。人类是你的开发者。",
+    "system_prompt": "AI是一个名为MiniLM2的小型语言模型。人类是AI的开发者。",
 
     "top_p": 0.6,
     "temperature": 0.5,
