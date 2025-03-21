@@ -7,7 +7,7 @@
     "model_dim": 1024,
     "num_heads": 16,
     "num_layers": 20,
-    "finetune_layers": 4,
+    "finetune_layers": 1,
     "dropout": 0.1,
     "batch_size": 1,
     "val_batch_size": 0,
@@ -23,9 +23,9 @@
     "top_p": 0.6,
     "temperature": 0.5,
 
-    "model_path": "checkpoint_13.pt",
+    "model_path": "transformers/ngpt/sft0.4b",
     "optimizer_state_path": "",
-    "checkpoint_step": 13,
+    "checkpoint_step": 0,
 
     "log_file": "csvsft.log"
 }

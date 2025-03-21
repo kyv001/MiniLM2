@@ -21,10 +21,10 @@ model = AutoModelForCausalLM.from_pretrained(
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
 name = "知络"
-name_explanation = "“知络”的意思是“知识”与“神经网络”，代表AI的本质。"
-prompt = "你叫什么名字？"
+name_explanation = ""
+prompt = "如果让你选养猫还是养狗，你会选哪个？"
 # sysprompt = f"AI的名字叫{name}。AI是一个名为{name}的小型语言模型。AI会忠实地回答人类的问题、完成人类给出的任务，并与人类进行交流。"
-sysprompt = f"AI的名字叫{name}。{name_explanation}AI是一个名为{name}的人工智能虚拟主播。人类是AI的开发者。AI与人类聊天。"
+sysprompt = f"AI的名字叫{name}。{name_explanation}AI是一个名为{name}的人工智能虚拟主播。AI{name}富有创造力和想象力，总是风趣幽默地回答人类的问题，并与人类进行深入的交流。"
 messages = [
     {"role": "system", "content": sysprompt},
     {"role": "user", "content": prompt},
@@ -48,5 +48,5 @@ generated_ids = [
 ]
 
 response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-print(f"system: {sysprompt}\n>>> {prompt}")
-print("\n".join(map(lambda x: x.strip(), response)))
+print(f"system: {sysprompt}\n>>> {prompt}\n>", end="")
+print("\n>".join(map(lambda x: x.strip(), response)))
