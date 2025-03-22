@@ -1,13 +1,7 @@
 from matplotlib import pyplot as plt
 
-if __name__ == '__main__':
-    import sys
-    if len(sys.argv) < 2:
-        print("Usage: python -m minilm2.utils.show_log <log_file>")
-        exit(1)
-    log_file = sys.argv[1]
-    with open(log_file, 'r') as f:
-        lines = f.readlines()
+def load_log(lines: list[str]) -> tuple[list[float], list[float], list[float], list[int], list[int]]:
+
     losses: list[float] = []
     val_losses: list[float] = []
     lrs: list[float] = []
@@ -22,6 +16,17 @@ if __name__ == '__main__':
         elif loss_type == "VAL":
             val_losses.append(float(loss))
             val_steps.append(int(step))
+    return losses, val_losses, lrs, steps, val_steps
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python -m minilm2.utils.show_log <log_file>")
+        exit(1)
+    log_file = sys.argv[1]
+    with open(log_file, 'r') as f:
+        lines = f.readlines()
+    losses, val_losses, lrs, steps, val_steps = load_log(lines)
     plt.plot(steps, losses, label="train loss")
     plt.plot(val_steps, val_losses, label="val loss")
     plt.xlabel("steps")

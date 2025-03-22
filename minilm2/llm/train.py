@@ -1,4 +1,5 @@
 import math
+import warnings
 import torch
 from tqdm import tqdm
 from torch import nn, optim
@@ -10,6 +11,7 @@ from .dataset import PreTrainDataset, collate_fn, from_file
 from .validate import validate
 from . import config
 from .lr_schedule import get_lr_schedule
+from .muon import Muon
 
 if __name__ == '__main__':
     import sys
@@ -72,6 +74,12 @@ if __name__ == '__main__':
     train_dataset, val_dataset = from_file(
         os.path.join(config_dir, train_config["dataset_path"]),
         train_config["max_length"])
+    if config.NUM_WORKERS != 0: # 如果需要正常保存数据使用状态，则必须是0
+        warnings.warn((
+            f"Using {config.NUM_WORKERS} workers for data loading."
+            "Might not be able to save the usage properly."
+            "Consider setting `config.NUM_WORKERS = 0`."
+        ))
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_config['batch_size'],
@@ -81,10 +89,35 @@ if __name__ == '__main__':
     )
 
     # 定义优化器
-    optimizer = optim.AdamW(model.parameters(), fused=True, betas=(0.9, 0.99), weight_decay=0.01)
+    if train_config['optimizer'] == 'adamw':
+        optimizer: optim.Optimizer = optim.AdamW(
+            model.parameters(),
+            fused=True,
+            betas=tuple(train_config['betas']),
+            weight_decay=train_config['weight_decay']
+        )
+    elif train_config['optimizer'] == 'muon':
+        muon_params_dict = {
+            n: p for n, p in model.named_parameters()
+            if p.ndim >= 2 and 'wte' not in n and 'lm_head' not in n
+        }
+        adam_params_dict = {
+            n: p for n, p in model.named_parameters()
+            if n not in muon_params_dict
+        }
+        optimizer = Muon(
+            muon_params=muon_params_dict.values(),
+            adamw_params=adam_params_dict.values(),
+            wd=train_config['weight_decay'],
+            adamw_betas=tuple(train_config['betas'])
+        )
+    else:
+        raise ValueError(f"Unsupported optimizer: {train_config['optimizer']}")
+    # 如果有的话，加载优化器状态
     if train_config['optimizer_state_path']:
-        print(f"==> Loading optimizer state from {os.path.join(config_dir, train_config['optimizer_state_path'])}")
-        optimizer.load_state_dict(torch.load(os.path.join(config_dir, train_config['optimizer_state_path']), weights_only=True))
+        optimizer_state_path = os.path.join(config_dir, train_config['optimizer_state_path'])
+        print(f"==> Loading optimizer state from {optimizer_state_path}")
+        optimizer.load_state_dict(torch.load(optimizer_state_path, weights_only=True))
 
     # 定义学习率衰减策略
     lr_schedule = get_lr_schedule(
