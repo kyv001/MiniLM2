@@ -1,5 +1,6 @@
 import math
 import warnings
+import time
 import torch
 from tqdm import tqdm
 from torch import nn, optim
@@ -21,9 +22,10 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('Usage: python -m minilm2.llm.train <config_path>')
         exit(1)
+    train_config = json.load(open("models/defaults.json"))
     config_path = sys.argv[1]
     config_dir = os.path.dirname(config_path) # 配置文件路径
-    train_config = json.load(open(config_path))
+    train_config.update(json.load(open(config_path)))
 
     # 根据配置文件创建模型
     model_type = train_config["model"]
@@ -65,6 +67,8 @@ if __name__ == '__main__':
 
     # 将模型移动到显存并编译以加速训练
     model.to(config.DEVICE)
+    if train_config["bfloat16"]:
+        model.bfloat16()
     print("==> Compiling model...")
     model.compile()
     model.train()
@@ -166,7 +170,7 @@ if __name__ == '__main__':
                     optimizer.step()
                     if model_type == "NGPT":
                         model.normalize() # NGPT需要在每个训练步进行参数归一化
-                    open(log_fname, 'a').write(f'TRAIN,{step},{lr},{total_loss}\n')
+                    open(log_fname, 'a').write(f'TRAIN,{step},{lr},{total_loss},{time.time()}\n')
                     total_loss = 0.0
 
                     # 定期进行验证并保存检查点
@@ -179,7 +183,7 @@ if __name__ == '__main__':
                         checkpoint_name = f'checkpoint_{step}_{val_loss:.4f}.pt'
                         model.save_pretrained(os.path.join(config_dir, checkpoint_name))
                         print(f'==> Saved checkpoint to {checkpoint_name}')
-                        open(log_fname, 'a').write(f'VAL,{step},{lr},{val_loss}\n')
+                        open(log_fname, 'a').write(f'VAL,{step},{lr},{val_loss},{time.time()}\n')
 
     except KeyboardInterrupt:
         print('Training interrupted.')
