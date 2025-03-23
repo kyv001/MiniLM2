@@ -27,10 +27,6 @@ if __name__ == '__main__':
     config_dir = os.path.dirname(config_path) # 配置文件路径
     train_config.update(json.load(open(config_path)))
 
-    # 根据配置文件创建模型
-    model_type = train_config["model"]
-    print(f"Loading {model_type} model...")
-
     # 加载tokenizer并获取词表大小
     print("Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(os.path.join(config_dir, train_config['tokenizer_path']))
