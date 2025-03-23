@@ -1,4 +1,6 @@
 import math
+import warnings
+import time
 import torch
 from tqdm import tqdm
 from torch import nn, optim
@@ -10,6 +12,7 @@ from .dataset_sft import SFTDataset, collate_fn, from_file
 from .validate import validate
 from . import config
 from .lr_schedule import get_lr_schedule
+from .muon import Muon
 
 if __name__ == '__main__':
     import sys
@@ -19,9 +22,10 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('Usage: python -m minilm2.llm.sft <config_path>')
         exit(1)
+    train_config = json.load(open("models/defaults.json"))
     config_path = sys.argv[1]
     config_dir = os.path.dirname(config_path) # 配置文件路径
-    train_config = json.load(open(config_path))
+    train_config.update(json.load(open(config_path)))
 
     # 加载tokenizer并获取词表大小
     print("Loading tokenizer...")
@@ -46,6 +50,8 @@ if __name__ == '__main__':
 
     # 将模型移动到显存并编译以加速训练
     model.to(config.DEVICE)
+    if train_config["bfloat16"]:
+        model.bfloat16()
     print("==> Compiling model...")
     model.compile()
     model.train()
@@ -55,6 +61,12 @@ if __name__ == '__main__':
     train_dataset = from_file(
         os.path.join(config_dir, train_config["dataset_path"]),
         train_config["max_length"])
+    if config.NUM_WORKERS != 0: # 如果需要正常保存数据使用状态，则必须是0
+        warnings.warn((
+            f"Using {config.NUM_WORKERS} workers for data loading."
+            "Might not be able to save the usage properly."
+            "Consider setting `config.NUM_WORKERS = 0`."
+        ))
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_config['batch_size'],
@@ -64,7 +76,35 @@ if __name__ == '__main__':
     )
 
     # 定义优化器
-    optimizer = optim.AdamW(model.parameters(), fused=True, weight_decay=0.0)
+    if train_config['optimizer'] == 'adamw':
+        optimizer: optim.Optimizer = optim.AdamW(
+            model.parameters(),
+            fused=True,
+            betas=tuple(train_config['betas']),
+            weight_decay=train_config['weight_decay']
+        )
+    elif train_config['optimizer'] == 'muon':
+        muon_params_dict = {
+            n: p for n, p in model.named_parameters()
+            if p.ndim >= 2 and 'wte' not in n and 'lm_head' not in n
+        }
+        adam_params_dict = {
+            n: p for n, p in model.named_parameters()
+            if n not in muon_params_dict
+        }
+        optimizer = Muon(
+            muon_params=muon_params_dict.values(),
+            adamw_params=adam_params_dict.values(),
+            wd=train_config['weight_decay'],
+            adamw_betas=tuple(train_config['betas'])
+        )
+    else:
+        raise ValueError(f"Unsupported optimizer: {train_config['optimizer']}")
+    # 如果有的话，加载优化器状态
+    if train_config['optimizer_state_path']:
+        optimizer_state_path = os.path.join(config_dir, train_config['optimizer_state_path'])
+        print(f"==> Loading optimizer state from {optimizer_state_path}")
+        optimizer.load_state_dict(torch.load(optimizer_state_path, weights_only=True))
 
     # 定义学习率衰减策略
     lr_schedule = get_lr_schedule(
@@ -84,8 +124,8 @@ if __name__ == '__main__':
     try:
         with tqdm(train_loader) as pbar:
             for x, y, m in pbar:
-                if m.sum() <= 10:
-                    continue # 跳过有效长度小于等于10的batch
+                # if m.sum() <= 10:
+                #     continue # 跳过有效长度小于等于10的batch
                 # 一个step的开始，更新学习率
                 if micro_step % train_config["n_batches_per_step"] == 0:
                     optimizer.zero_grad()
@@ -116,7 +156,7 @@ if __name__ == '__main__':
                     optimizer.step()
                     if model_type == "NGPT":
                         model.normalize() # NGPT需要在每个训练步进行参数归一化
-                    open(log_fname, 'a').write(f'SFT,{step},{lr},{total_loss}\n')
+                    open(log_fname, 'a').write(f'SFT,{step},{lr},{total_loss},{time.time()}\n')
                     total_loss = 0.0
 
                     # SFT不需要验证，直接保存
@@ -137,6 +177,9 @@ if __name__ == '__main__':
             for i in tqdm(used_indexes):
                 f.write(f'{i}\n')
         print(f"==> Unused indexes saved to {lst_name}")
+        optimizer_state = optimizer.state_dict()
+        torch.save(optimizer_state, os.path.join(config_dir, f'optimizer_{step}.pt'))
+        print(f"==> Optimizer state saved to {os.path.join(config_dir, f'optimizer_{step}.pt')}")
         print("!! REMEMBER TO UPDATE THE DATASET FILE AND CONFIG FILE TO USE THE UPDATED LIST AND CHECKPOINT !!")
 
     finally:
