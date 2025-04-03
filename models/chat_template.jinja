@@ -8,8 +8,9 @@
     {%- if role_current == 'user' %}
         {{- '人类：' + content + sep }}
     {%- elif role_current == 'assistant' %}
+        {{- 'AI：' }}
         {%- generation %}
-        {{- 'AI：' + content + sep }}
+        {{- content + sep }}
         {%- endgeneration %}
     {%- elif role_current == 'chat' %}
         {{- '弹幕：' + content }}
