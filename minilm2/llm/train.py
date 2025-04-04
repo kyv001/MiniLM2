@@ -162,11 +162,11 @@ if __name__ == '__main__':
                 # 一个step的结束，更新参数并保存日志
                 if micro_step % train_config['n_batches_per_step'] == 0:
                     step += 1
-                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    grad_norm = nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     optimizer.step()
                     if model_type == "NGPT":
                         model.normalize() # NGPT需要在每个训练步进行参数归一化
-                    open(log_fname, 'a').write(f'TRAIN,{step},{lr},{total_loss},{time.time()}\n')
+                    open(log_fname, 'a').write(f'TRAIN,{step},{lr},{total_loss},{time.time()},{grad_norm}\n')
                     total_loss = 0.0
 
                     # 定期进行验证并保存检查点
