@@ -7,6 +7,8 @@
     {%- set content = message['content'] %}
     {%- if role_current == 'user' %}
         {{- '人类：' + content + sep }}
+    {%- elif role_current == 'system' %}
+        {{- '系统：' + content + sep }}
     {%- elif role_current == 'assistant' %}
         {{- 'AI：' }}
         {%- generation %}

@@ -20,10 +20,7 @@
     "betas": [0.9, 0.99],
     "weight_decay": 0,
     "bfloat16": false,
-
-    "top_p": 0.1,
-    "temperature": 0.5,
-
+    
     "model_path": "",
     "optimizer_state_path": "",
     "checkpoint_step": 0,

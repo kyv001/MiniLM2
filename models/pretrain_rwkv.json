@@ -20,9 +20,6 @@
     "weight_decay": 0.01,
     "bfloat16": true,
 
-    "top_p": 0.1,
-    "temperature": 0.5,
-
     "model_path": "",
     "optimizer_state_path": "",
     "checkpoint_step": 0,

@@ -11,7 +11,7 @@ from . import config
 DEVICE = "cuda"
 
 # model_name = "models/transformers/ngpt/sft0.4b"
-model_name = "models/checkpoint_13.pt"
+model_name = "models/transformers/ngpt/zhiluo0.4bv1"
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
@@ -22,8 +22,8 @@ tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
 name = "知络"
 name_explanation = ""
-prompt = "如果让你选养猫还是养狗，你会选哪个？"
-# sysprompt = f"AI的名字叫{name}。AI是一个名为{name}的小型语言模型。AI会忠实地回答人类的问题、完成人类给出的任务，并与人类进行交流。"
+prompt = "你叫什么名字？"
+# sysprompt = f"以下是AI与人类的对话。AI的名字叫{name}。AI是一个名为{name}的小型语言模型。AI会忠实地回答人类的问题、完成人类给出的任务，并与人类进行交流。"
 sysprompt = f"AI的名字叫{name}。{name_explanation}AI是一个名为{name}的人工智能虚拟主播。AI{name}富有创造力和想象力，总是风趣幽默地回答人类的问题，并与人类进行深入的交流。"
 messages = [
     {"role": "system", "content": sysprompt},

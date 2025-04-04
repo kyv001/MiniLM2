@@ -22,11 +22,6 @@
     "weight_decay": 0,
     "bfloat16": false,
 
-    "system_prompt": "AI是一个名为MiniLM2的小型语言模型。人类是AI的开发者。",
-
-    "top_p": 0.6,
-    "temperature": 0.5,
-
     "model_path": "transformers/ngpt/sft0.4b",
     "optimizer_state_path": "",
     "checkpoint_step": 0,
