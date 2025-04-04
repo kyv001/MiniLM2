@@ -21,9 +21,10 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('Usage: python -m minilm2.llm.eval_pretrained <config_path>')
         exit(1)
+    train_config = json.load(open("models/defaults.json"))
     config_path = sys.argv[1]
     config_dir = os.path.dirname(config_path) # 配置文件路径
-    train_config = json.load(open(config_path))
+    train_config.update(json.load(open(config_path)))
 
     # 加载tokenizer并获取词表大小
     print("Loading tokenizer...")
