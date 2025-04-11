@@ -86,7 +86,9 @@ if __name__ == '__main__':
     elif train_config['optimizer'] == 'muon':
         muon_params_dict = {
             n: p for n, p in model.named_parameters()
-            if p.ndim >= 2 and 'wte' not in n and 'lm_head' not in n
+            # ngpt中会出现如[1, 1, 1, 768]形状的参数，需要squeeze提取有效维度数量
+            # muon适合处理矩阵参数而不是向量参数
+            if p.squeeze().ndim == 2 and 'wte' not in n and 'lm_head' not in n
         }
         adam_params_dict = {
             n: p for n, p in model.named_parameters()

@@ -1,0 +1,16 @@
+{
+    "max_length": 2048,
+    "model_dim": 512,
+    "num_heads": 8,
+    "num_layers": 6,
+    
+    "dropout": 0,
+    "batch_size": 2,
+    "n_batches_per_step": 32,
+    "max_learning_rate": 3e-2,
+    "min_learning_rate": 1e-5,
+    "total_steps": 10000,
+    "optimizer": "muon",
+
+    "bfloat16": true
+}
