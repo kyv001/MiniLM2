@@ -179,3 +179,6 @@ datasets/
 
 # IPython notebooks
 *.ipynb
+
+# Model weights
+models/transformers/
