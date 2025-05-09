@@ -337,8 +337,8 @@ def get_context(examples: list[dict], subject: str) -> str:
     final_example = examples[:][-1]
     final_example['answer'] = ""
     prompt += template.format(**final_example)
-    if len(prompt) > 1024: # 要保证提示词出现在前面
-        prompt = sys_prompt + prompt[-1024 + len(sys_prompt):]
+    if len(prompt) > model.config.max_position_embeddings: # 要保证提示词出现在前面
+        prompt = sys_prompt + prompt[-model.config.max_position_embeddings + len(sys_prompt):]
     return prompt
 
 if __name__ == "__main__":
@@ -377,9 +377,9 @@ if __name__ == "__main__":
             logits = model(input_ids).squeeze()[-1][tokenizer.convert_tokens_to_ids(['A', 'B', 'C', 'D'])]
             answer = 'ABCD'[int(logits.argmax().item())]
             answers[subject][d['id']] = answer
-            if mode == "val": # 只有验证集才有正确答案
-                if correct_answer == answer:
-                    scores[subject] += 1 / total
+            if mode == "val" and correct_answer == answer: # 只有验证集才有正确答案
+                scores[subject] += 1 / total
+            del prompt, input_ids, logits, answer, correct_answer
         print(f"Score for {subject}: {scores[subject]}") if mode == "val" else ...
     if mode == "val":
         print(f"Final scores: ")
