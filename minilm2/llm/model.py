@@ -162,7 +162,7 @@ class CausalSelfAttention(nn.Module):
             nn.functional.scaled_dot_product_attention(
                 q, k, v,
                 attn_mask=attn_mask, dropout_p=self.dropout,
-                scale=(self.head_dim / self.n_heads) ** 0.5)
+                scale=self.head_dim ** 0.5)
             .transpose(1, 2)
             .reshape(B, TT, C)
         )
