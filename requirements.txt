@@ -18,7 +18,7 @@ einops==0.8.0
 exceptiongroup==1.2.2
 executing==2.1.0
 filelock==3.16.1
-flash-linear-attention==0.2.1
+flash-linear-attention @ git+https://github.com/fla-org/flash-linear-attention/@36633cf590454536c20f7ef9e68d835f17c25580
 flash_muon @ git+https://github.com/nil0x9/flash-muon@6f96f17a19b3c3110d5886eb49d483293bf1e822
 fonttools==4.55.3
 frozenlist==1.5.0

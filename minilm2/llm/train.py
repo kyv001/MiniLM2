@@ -54,6 +54,15 @@ if __name__ == '__main__':
             dropout=train_config["dropout"],
             max_lr=train_config["max_learning_rate"]
         )
+    elif model_type == "gpt":
+        model_config = GPTConfig(
+            vocab_size=2 ** math.ceil(math.log2(vocab_size)),
+            dim=train_config["model_dim"],
+            n_blocks=train_config["num_layers"],
+            n_heads=train_config["num_heads"],
+            max_position_embeddings=train_config["max_length"],
+            dropout=train_config["dropout"]
+        )
     model = (AutoModelForCausalLM.from_pretrained(os.path.join(config_dir, train_config['model_path']))
                 if train_config['model_path'] else
                 AutoModelForCausalLM.from_config(model_config))
@@ -99,9 +108,7 @@ if __name__ == '__main__':
     elif train_config['optimizer'] == 'muon':
         muon_params_dict = {
             n: p for n, p in model.named_parameters()
-            # ngpt中会出现如[1, 1, 1, 768]形状的参数，需要squeeze提取有效维度数量
-            # muon适合处理矩阵参数而不是向量参数
-            if p.squeeze().ndim == 2 and 'wte' not in n and 'lm_head' not in n
+            if p.ndim == 2 and 'wte' not in n and 'lm_head' not in n
         }
         adam_params_dict = {
             n: p for n, p in model.named_parameters()
