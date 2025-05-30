@@ -25,9 +25,11 @@ SOFTWARE.
 
 import torch
 import math
+from flash_muon import * # type: ignore
 
 # This code snippet is a modified version adapted from the following GitHub repository:
 # https://github.com/KellerJordan/Muon/blob/master/muon.py
+'''
 @torch.compile
 def zeropower_via_newtonschulz5(G, steps):
     """
@@ -57,6 +59,8 @@ def zeropower_via_newtonschulz5(G, steps):
     if G.size(0) > G.size(1):
         X = X.T
     return X
+'''
+zeropower_via_newtonschulz5 = fast_newtonschulz # type: ignore
 
 
 class Muon(torch.optim.Optimizer):
