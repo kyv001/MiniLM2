@@ -621,6 +621,10 @@ class GPT(PreTrainedModel, GenerationMixin):
             ) for _ in range(self.config.n_blocks)
         ])
         self.lm_head = nn.Linear(self.config.dim, self.config.vocab_size)
+        self.apply(self.init_weights)
+        for pn, p in self.named_parameters():
+            if pn.endswith("o_proj.weight"):
+                nn.init.normal_(p, mean=0.0, std=0.02 / (2 * self.config.n_blocks) ** 0.5)
 
     def forward(self, x: torch.Tensor,
             return_dict: bool = False,
@@ -641,8 +645,9 @@ class GPT(PreTrainedModel, GenerationMixin):
             return x
         return CausalLMOutputWithPast(logits=x, past_key_values=tuple(key_values))
 
-    def save(self, path: str):
-        torch.save(self.state_dict(), path)  # 保存模型参数防止带上不必要的前缀
+    def init_weights(self, module):
+        if isinstance(module, nn.Linear) or isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=0.02)
 
     def prepare_inputs_for_generation(self, input_ids,
             past_key_values: tuple[tuple[torch.Tensor, torch.Tensor], ...] | None = None,
