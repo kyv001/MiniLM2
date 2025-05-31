@@ -645,10 +645,6 @@ class GPT(PreTrainedModel, GenerationMixin):
             return x
         return CausalLMOutputWithPast(logits=x, past_key_values=tuple(key_values))
 
-    def init_weights(self, module):
-        if isinstance(module, nn.Linear) or isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=0.02)
-
     def prepare_inputs_for_generation(self, input_ids,
             past_key_values: tuple[tuple[torch.Tensor, torch.Tensor], ...] | None = None,
             use_cache=False,
@@ -666,6 +662,10 @@ class GPT(PreTrainedModel, GenerationMixin):
                 ) # 我们假定每次生成一个token，所以只需要去掉第一个位置
             
         return {"x": input_ids, "use_cache": use_cache, "past_key_values": past_key_values if use_cache else None}
+
+    def init_weights(self, module):
+        if isinstance(module, nn.Linear) or isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=0.02)
 
 AutoConfig.register("gpt", GPTConfig)
 AutoModelForCausalLM.register(GPTConfig, GPT)
