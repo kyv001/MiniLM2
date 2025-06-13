@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from torch.nn import functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer # type: ignore
 from .model import *
-from .dataset import PreTrainDataset, collate_fn, from_file
+from .dataset import DatasetWithMask, collate_fn, from_file
 from .validate import validate
 from . import config
 from .lr_schedule import get_lr_schedule
@@ -34,27 +34,9 @@ if __name__ == '__main__':
     print(f"==> Vocab size: {vocab_size}")
 
     # 根据配置文件创建模型
-    model_type = train_config["model"]
+    model_type = train_config["model"].lower()
     print(f"Loading {model_type} model...")
-    if model_type == "NGPT":
-        model_config = NGPTConfig(
-            vocab_size=vocab_size,
-            dim=train_config["model_dim"],
-            n_blocks=train_config["num_layers"],
-            n_heads=train_config["num_heads"],
-            max_position_embeddings=train_config["max_length"],
-            dropout=train_config["dropout"]
-        )
-    elif model_type == "RWKV7":
-        model_config = RWKV7Config(
-            vocab_size=2 ** math.ceil(math.log2(vocab_size)),
-            dim=train_config["model_dim"],
-            n_blocks=train_config["num_layers"],
-            max_position_embeddings=train_config["max_length"],
-            dropout=train_config["dropout"],
-            max_lr=train_config["max_learning_rate"]
-        )
-    elif model_type == "gpt":
+    if model_type == "gpt":
         model_config = GPTConfig(
             vocab_size=2 ** math.ceil(math.log2(vocab_size)),
             dim=train_config["model_dim"],
@@ -63,12 +45,21 @@ if __name__ == '__main__':
             max_position_embeddings=train_config["max_length"],
             dropout=train_config["dropout"]
         )
+    else:
+        raise ValueError(f"Unsupported model: {model_type}")
     model = (AutoModelForCausalLM.from_pretrained(os.path.join(config_dir, train_config['model_path']))
                 if train_config['model_path'] else
                 AutoModelForCausalLM.from_config(model_config))
     # 统计参数量
     params = sum(p.numel() for p in model.parameters())
     print(f"==> Number of parameters: {params / 1e6:.2f}M")
+
+    # 去除不需要的梯度
+    if 'finetune_layers' in train_config:
+        print(f"==> Freezing the last {train_config['num_layers'] - train_config['finetune_layers']} layers...")
+        for block in model.blocks[train_config['finetune_layers'] - 1:]:
+            for param in block.parameters():
+                param.requires_grad = False
 
     # 将模型移动到显存并编译以加速训练
     model.to(config.DEVICE)
@@ -108,7 +99,9 @@ if __name__ == '__main__':
     elif train_config['optimizer'] == 'muon':
         muon_params_dict = {
             n: p for n, p in model.named_parameters()
-            if p.ndim == 2 and 'wte' not in n and 'lm_head' not in n
+            # ngpt中会出现如[1, 1, 1, 768]形状的参数，需要squeeze提取有效维度数量
+            # muon适合处理矩阵参数而不是向量参数
+            if p.squeeze().ndim == 2 and 'wte' not in n and 'lm_head' not in n
         }
         adam_params_dict = {
             n: p for n, p in model.named_parameters()
@@ -137,6 +130,7 @@ if __name__ == '__main__':
     )
 
     micro_step = 0
+    lr = 0
     step = train_config['checkpoint_step']
     total_loss = 0.0
     print("Start training...")
@@ -145,7 +139,9 @@ if __name__ == '__main__':
     torch.set_float32_matmul_precision('high') # 调整精度以加速训练
     try:
         with tqdm(train_loader) as pbar:
-            for x, y in pbar:
+            for y, m in pbar:
+                # if m.sum() <= 10:
+                #     continue # 跳过有效长度小于等于10的batch
                 # 一个step的开始，更新学习率
                 if micro_step % train_config["n_batches_per_step"] == 0:
                     optimizer.zero_grad()
@@ -154,16 +150,17 @@ if __name__ == '__main__':
                         param_group['lr'] = lr
                 micro_step += 1
 
-                x = x.to(config.DEVICE)
                 y = y.to(config.DEVICE)
+                m = m.to(config.DEVICE)
+                x = ((y - 2) * (1 - m)) + 2
                 logits = model(x)
-                loss = F.cross_entropy(
+                loss = (F.cross_entropy(
                     logits.view(-1, logits.size(-1)),
                     y.view(-1),
-                    reduction='mean',
+                    reduction="none",
                     ignore_index=config.SPECIAL_TOKENS["<pad>"]
-                ) / train_config['n_batches_per_step']
-                del x, y, logits # 释放显存
+                ) * m.view(-1)).sum() / m.sum() / train_config['n_batches_per_step']
+                del x, y, m, logits # 释放显存
                 loss.backward() # 反向传播积累梯度
                 total_loss += loss.item()
                 pbar.set_description(f'loss: {loss.item() * train_config["n_batches_per_step"]:.4f} lr: {lr:.4f}')
@@ -173,8 +170,6 @@ if __name__ == '__main__':
                     step += 1
                     grad_norm = nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     optimizer.step()
-                    if model_type == "NGPT":
-                        model.normalize() # NGPT需要在每个训练步进行参数归一化
                     open(log_fname, 'a').write(f'TRAIN,{step},{lr},{total_loss},{time.time()},{grad_norm}\n')
                     total_loss = 0.0
 
@@ -190,10 +185,11 @@ if __name__ == '__main__':
                         print(f'==> Saved checkpoint to {checkpoint_name}')
                         open(log_fname, 'a').write(f'VAL,{step},{lr},{val_loss},{time.time()}\n')
 
+
     except KeyboardInterrupt:
         print('Training interrupted.')
         # 保存未使用的数据集
-        assert isinstance(train_loader.dataset, PreTrainDataset)
+        assert isinstance(train_loader.dataset, DatasetWithMask)
         used_indexes = train_loader.dataset.get_used_indexes()
         dataset_path = os.path.dirname(os.path.join(config_dir, train_config['dataset_path']))
         lst_name = os.path.join(dataset_path, f'train{step}_used.lst')

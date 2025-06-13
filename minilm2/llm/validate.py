@@ -4,13 +4,14 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from . import config
 
-def validate(model: torch.nn.Module, val_dataset: Dataset, batch_size: int = 2) -> float:
+def validate(model: torch.nn.Module, val_dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], batch_size: int = 2) -> float:
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=config.NUM_WORKERS)
     losses: list[float] = []
     with torch.no_grad(), tqdm(val_loader) as pbar:
-        for x, y in pbar:
-            x = x.to(config.DEVICE)
+        for y, m in pbar:
+            m = m.to(config.DEVICE)
             y = y.to(config.DEVICE)
+            x = ((y - 2) * (1 - m)) + 2
             logits = model(x)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1), reduction='mean')
             losses.append(loss.item())
